@@ -13,7 +13,7 @@ public class serverRun implements Runnable{
 	DataOutputStream outToClient = null;
 	BufferedOutputStream dataToClient = null;
 	
-	private Socket connectionSocket = null;
+	Socket connectionSocket = null;
 	public serverRun(Socket c) {
 		connectionSocket = c;
 	}

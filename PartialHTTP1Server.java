@@ -1,6 +1,10 @@
 //Main code for the server, uses serverRun for each thread
 //Thomas Fiorilla, trf40
 
+import java.io.*;
+import java.net.*;
+import java.util.*;
+
 public class PartialHTTP1Server{ 
 	public static void main(String[] args) throws Exception {
 		try {
