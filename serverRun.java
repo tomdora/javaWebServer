@@ -1,4 +1,4 @@
-import java.io.*;
+	import java.io.*;
 import java.net.*;
 import java.util.*;
 import java.text.*;
@@ -31,20 +31,19 @@ public class serverRun implements Runnable{
 			outToClient = new DataOutputStream(connectionSocket.getOutputStream());
 			dataToClient = new BufferedOutputStream(connectionSocket.getOutputStream());
 			
-			String clientInput = inFromClient.readLine();
-			String additionalRequest = inFromClient.readLine();
-			
-			//If there's an additional line, check for If-Modified-Since, otherwise we don't care
-			if(additionalRequest != null){
-				if(additionalRequest.contains("If-Modified-Since: ")){
-					additionalRequest = additionalRequest.substring(19);
-					System.out.println("Date: " + additionalRequest);
-				} else{
-					additionalRequest = null;
-				}
+			//Make a String array to hold each line, then read through the BufferedReader for each line
+			String[] clientInput = {null, null, null, null, null, null, null};
+			int i = 0;
+			while(inFromClient.ready()){
+				String line = inFromClient.readLine();
+				System.out.println("	reading line " + (i+1) + ": " + line);
+				
+				clientInput[i] = line;
+				i++;
 			}
+			System.out.println("	All lines read.");
 			
-			String[] splitInput = clientInput.split(" ");
+			String[] splitInput = clientInput[0].split(" ");
 			
 			String method = splitInput[0];
 			String clientRequest = splitInput[1];
@@ -152,15 +151,19 @@ public class serverRun implements Runnable{
 					sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
 					String lastModified = sdf.format(requestedFile.lastModified());
 					
-					if(method.equals("GET") || method.equals("POST")){					//GET and POST are the same for the project
+					if(method.equals("GET")){					// if a GET is called
 						//System.out.println("Last Modified: " + lastModified + ", Expires: " + getEXP());
 						
 						byte[] fileData = readFileData(requestedFile, fileLength);
 						
-						//We only care about If-Modified-Since for GET requests; make sure if there is one
-						if(additionalRequest != null){
+						//Check to see if the second line is null, and if it isn't, check for "If-Modified-Since: "
+						if(clientInput[1] != null && clientInput[1].contains("If-Modified-Since: ")){
 							try{															//try to parse the string as a date
-								Date ifModSince = sdf.parse(additionalRequest);
+								//Since we were successful, we can break apart the first line
+								clientInput[1] = clientInput[1].substring(19);
+								System.out.println("Date: " + clientInput[1]);
+								
+								Date ifModSince = sdf.parse(clientInput[1]);
 								
 								//check if the lastModified date is after the requested date
 								if(ifModSince.compareTo(sdf.parse(lastModified)) < 0 || ifModSince.compareTo(sdf.parse(lastModified)) == 0){
@@ -270,6 +273,9 @@ public class serverRun implements Runnable{
 						dataToClient.close();
 						connectionSocket.close();
 						return;
+						
+					} else if(method.equals("POST")){
+						
 						
 					} else{																//if not GET or POST it's then HEAD; simply doesn't send data to client
 						System.out.println("Last Modified: " + lastModified + ", Expires: " + getEXP());

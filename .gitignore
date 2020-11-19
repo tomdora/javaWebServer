@@ -2,3 +2,5 @@ resources/
 top_secret.txt
 index.html
 *.class
+cgi_bin/
+*.tar.gz
