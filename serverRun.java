@@ -36,17 +36,19 @@ public class serverRun implements Runnable{
 			int i = 0;
 			while(inFromClient.ready()){
 				String line = inFromClient.readLine();
-				System.out.println("	reading line " + (i+1) + ": " + line);
+				//System.out.println("	reading line " + (i+1) + ": " + line);
 				
 				clientInput[i] = line;
 				i++;
 			}
+			
 			System.out.println("	All lines read.");
 			
 			String[] splitInput = clientInput[0].split(" ");
 			
 			String method = splitInput[0];
 			String clientRequest = splitInput[1];
+			System.out.println("	Client Request: " + clientRequest);
 			
 			String httpVer = null;
 			if(splitInput.length == 3){
@@ -277,30 +279,50 @@ public class serverRun implements Runnable{
 						
 					} else if(method.equals("POST")){
 						//First thing to check is if the POST request is valid with Content-Length and Content-Type
-						int contentLength;
-						String contentType;
+						String queries = null;
+						String CONTENT_LENGTH = null;
+						String HTTP_FROM = null;
+						String USER_AGENT = null;
 						
 						i = 0;
 						boolean hasLength = false;
 						boolean hasType = false;
 						while(clientInput[i] != null && i < clientInput.length){
-							if(clientInput[i].contains("Content-Length: ")){
-								System.out.println("	Content-Length Found");
+							if(!hasLength && clientInput[i].contains("Content-Length: ")){
+								//System.out.println("	Content-Length Found");
 								
 								String[] splitLength = clientInput[i].split(" ");
+								CONTENT_LENGTH = splitLength[1];
+								
 								hasLength = true;
 								
-							} else if(clientInput[i].contains("Content-Type: ")){
-								System.out.println("	Content-Type Found");
-								
-								String[] splitType = clientInput[i].split(" ");
+							} else if(!hasType && clientInput[i].contains("Content-Type: ")){
+								//System.out.println("	Content-Type Found");
 								hasType = true;
 								
-							} else if(hasLength && hasType){
-								System.out.println("	Content-Length and Content-Type Exist");
+							}
+							
+							//Look for a "From" line for HTTP_FROM environment
+							if(clientInput[i].contains("From: ")){
+								String[] splitFrom = clientInput[i].split(" ");
 								
-								break;
+								HTTP_FROM = splitFrom[1];
+							}
+							
+							//Look for a "User-Agent" line for USER_AGENT environment
+							if(clientInput[i].contains("User-Agent: ")){
+								String[] splitAgent = clientInput[i].split(" ");
 								
+								USER_AGENT = splitAgent[1];
+							}
+							
+							//Check to see if there exist possible query strings
+							if(clientInput[i].isEmpty() && i < clientInput.length - 1){
+								queries = clientInput[i+1];
+								
+								//queries = queries.replaceAll("(\\!)([\\!\\*'\\(\\);:@&\\+,/\\?#\\[\\]\\s])", "$2");
+								
+								System.out.println("	Queries: " + queries);
 							}
 							
 							i++;
@@ -373,23 +395,94 @@ public class serverRun implements Runnable{
 							connectionSocket.close();
 							return;
 						}
-						System.out.println("	No problems.\n");
+						
 						//All that said and done, we can now run the CGI script with ProcessBuilder.
+						//First we create the ProcessBuilder running the script
+						ProcessBuilder pb = new ProcessBuilder("." + clientRequest);
 						
-						List<String> list = new ArrayList<String>();
-						list.add("." + clientRequest);
+						//Then we create a Map
+						Map<String, String> env = pb.environment();
+						env.put("CONTENT_LENGTH", CONTENT_LENGTH);
+						env.put("SCRIPT_NAME", clientRequest);
+						env.put("SERVER_NAME", String.valueOf(InetAddress.getLocalHost()));
+						env.put("SERVER_PORT", String.valueOf(connectionSocket.getPort()));
+						env.put("HTTP_FROM", HTTP_FROM);
+						env.put("HTTP_USER_AGENT", USER_AGENT);
 						
-						Process postProcess = new ProcessBuilder(list).start();
-						//List<String> results = readOutput(postProcess.getInputStream());
-						//int exitCode = postProcess.waitFor();
-						BufferedReader processOutput = new BufferedReader(new InputStreamReader(postProcess.getInputStream()));
+						//Start the process
+						Process process = pb.start();
 						
-						//System.out.println("	Output is: " + processOutput);
+						//Give the process the input
+						if(queries != null){
+							queries = queries.replaceAll("(\\!)([\\!\\*'\\(\\);:@&\\+,/\\?#\\[\\]\\s])", "$2");
+							
+							OutputStream pInput = process.getOutputStream(); 
+							pInput.write(queries.getBytes());
+							pInput.close();
+							
+							//System.out.println("	Queries Written.");
+						} //else{ System.out.println("	No queries."); }
 						
-						String s = null; 
-						while ((s = processOutput.readLine()) != null){ 
-							System.out.println(s); 
-						} 
+						//Grab the output of the process
+						BufferedReader pOutput = new BufferedReader(new InputStreamReader(process.getInputStream()));
+						
+						String output = null;
+						String msg = "";
+						while((output = pOutput.readLine()) != null){
+							msg = msg + output + "\n";
+						}
+						
+						System.out.println("	msg: " + msg);
+						
+						pOutput.close();
+						
+						//If we do have a payload to deliver...
+						if(!msg.isEmpty()){
+							System.out.println("	200 OK.\n");
+							outToClient.writeBytes("HTTP/1.0 200 OK\r\n");
+							outToClient.writeBytes("Content-Type: text/html\r\n");
+							outToClient.writeBytes("Content-Length: " + msg.length() + "\r\n");
+							outToClient.writeBytes("Date: " + getGMT() + "\r\n");
+							outToClient.writeBytes("Server: PartialHTTP1Server\r\n");
+							outToClient.writeBytes("Allow: GET, POST, HEAD\r\n");
+							outToClient.writeBytes("Content-Encoding: identity\r\n");
+							outToClient.writeBytes("Expires: " + getEXP() + "\r\n");
+							outToClient.writeBytes("\r\n");
+							//outToClient.writeBytes(msg);
+							outToClient.flush();
+							
+							dataToClient.write(msg.getBytes(), 0, msg.length());
+							dataToClient.flush();
+							
+							Thread.sleep(250);
+							inFromClient.close();
+							outToClient.close();
+							dataToClient.close();
+							connectionSocket.close();
+							return;
+							
+						} else{		//no payload
+							System.out.println("	204 No Content.\n");
+							
+							outToClient.writeBytes("HTTP/1.0 204 No Content\r\n");
+							outToClient.writeBytes("Content-Type: text/html\r\n");
+							outToClient.writeBytes("Content-Length: 2\r\n");
+							outToClient.writeBytes("Date: " + getGMT() + "\r\n");
+							outToClient.writeBytes("Server: PartialHTTP1Server\r\n");
+							outToClient.writeBytes("Allow: GET, POST, HEAD\r\n");
+							outToClient.writeBytes("Content-Encoding: identity\r\n");
+							outToClient.writeBytes("Expires: " + getEXP() + "\r\n");
+							outToClient.writeBytes("\r\n");
+							outToClient.flush();
+							
+							Thread.sleep(250);
+							inFromClient.close();
+							outToClient.close();
+							dataToClient.close();
+							connectionSocket.close();
+							return;
+							
+						}
 						
 					} else{																//if not GET or POST it's then HEAD; simply doesn't send data to client
 						String contentType = getContentType(clientRequest);
