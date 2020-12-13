@@ -4,3 +4,5 @@ index.html
 *.class
 cgi_bin/
 *.tar.gz
+saved-cookies.txt
+*.html
