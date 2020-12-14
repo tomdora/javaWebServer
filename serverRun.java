@@ -117,7 +117,7 @@ public class serverRun implements Runnable{
 			} else{
 				//Make sure the requested file is actually a file; if it's not, we'll presume they want the specified default file
 				File requestedFile;
-				String cookieDateTime;
+				String cookieDateTime = null;
 				
 				if(!clientRequest.endsWith("/")){
 					requestedFile = new File(WEB_ROOT, clientRequest);
@@ -197,13 +197,24 @@ public class serverRun implements Runnable{
 					String contentType = getContentType(clientRequest);
 					byte[] fileData = readFileData(requestedFile, fileLength);
 					
+					if(clientRequest.endsWith("index_seen.html") && cookieDateTime != null){
+						String fileDataString = new String(fileData);
+						
+						String replacement = fileDataString.replaceAll("%YEAR-%MONTH-%DAY %HOUR-%MINUTE-%SECOND", cookieDateTime);
+						
+						fileData = replacement.getBytes();
+						
+						//System.out.println("	index_seen.html date-time replaced with " + cookieDateTime);
+						System.out.println("	" + replacement);
+					}
+					
 					//Create an encoded date to send back as the cookie
 					LocalDateTime myDateObj = LocalDateTime.now();
 					DateTimeFormatter myFormatObj = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 					String formattedDate = myDateObj.format(myFormatObj);
 					
 					String encodedDateTime = URLEncoder.encode(formattedDate, "UTF-8");
-					System.out.printf("	URL encoded date-time %s \n",encodedDateTime);
+					System.out.println("	URL encoded date-time " + encodedDateTime);
 					
 					//Check to see if the second line is null, and if it isn't, check for "If-Modified-Since: "
 					if(clientInput.get(1) != null && clientInput.get(1).contains("If-Modified-Since: ")){
@@ -234,13 +245,13 @@ public class serverRun implements Runnable{
 								outToClient.writeBytes("Server: PartialHTTP1Server\r\n");
 								outToClient.writeBytes("Allow: GET, POST, HEAD\r\n");
 								outToClient.writeBytes("Content-Encoding: identity\r\n");
-								outToClient.writeBytes("Content-Length: " + fileLength + "\r\n");
+								outToClient.writeBytes("Content-Length: " + fileData.length + "\r\n");
 								outToClient.writeBytes("Expires: " + getEXP() + "\r\n");
 								outToClient.writeBytes("Last-Modified: " + lastModified + "\r\n");
 								outToClient.writeBytes("\r\n");
 								outToClient.flush();
 								
-								dataToClient.write(fileData, 0, fileLength);
+								dataToClient.write(fileData, 0, fileData.length);
 								dataToClient.flush();
 								
 								System.out.println("File " + clientRequest + " of type " + contentType + " returned\n");
@@ -627,6 +638,7 @@ public class serverRun implements Runnable{
 	///////////////////////////////////////////////////////////////////////////////////////////////////
 	
 	private void getHeaderOK(String contentType, String encodedDateTime, int fileLength, String lastModified, byte[] fileData, String clientRequest){
+		System.out.println("	Returning 200 OK");
 		try{
 			outToClient.writeBytes("HTTP/1.0 200 OK\r\n");
 			outToClient.writeBytes("Content-Type: " + contentType + "\r\n");
@@ -635,13 +647,13 @@ public class serverRun implements Runnable{
 			outToClient.writeBytes("Server: PartialHTTP1Server\r\n");
 			outToClient.writeBytes("Allow: GET, POST, HEAD\r\n");
 			outToClient.writeBytes("Content-Encoding: identity\r\n");
-			outToClient.writeBytes("Content-Length: " + fileLength + "\r\n");
+			outToClient.writeBytes("Content-Length: " + fileData.length + "\r\n");
 			outToClient.writeBytes("Expires: " + getEXP() + "\r\n");
 			outToClient.writeBytes("Last-Modified: " + lastModified + "\r\n");
 			outToClient.writeBytes("\r\n");
 			outToClient.flush();
 			
-			dataToClient.write(fileData, 0, fileLength);
+			dataToClient.write(fileData, 0, fileData.length);
 			dataToClient.flush();
 			
 			System.out.println("File " + clientRequest + " of type " + contentType + " returned\n");
